@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Gantt con Google Charts</title>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+</head>
+<body>
+  <!-- Menús desplegables -->
+  <label for="filtroID">Filtrar por ID:</label>
+  <select id="filtroID">
+    <option value="todos">Todos</option>
+  </select>
+
+  <label for="filtroAct">Filtrar por Actividad:</label>
+  <select id="filtroAct">
+    <option value="todos">Todas</option>
+  </select>
+
+
+  <div id="gantt_chart" style="width:100%; height:auto;"></div>
+
+  <script>
+    const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQf6O3C2jZt2WBoN5YvxkieCRynEGMug_E3ubC6slbV8L_tUmNCFkz3XA65AGR9L55txSxPh2UMhaAh/pub?gid=0&single=true&output=csv";
+
+    let rawData = [];
+
+    google.charts.load('current', {'packages':['gantt'],language: 'es'});
+    google.charts.setOnLoadCallback(loadData);
+
+    function loadData() {
+      fetch(sheetUrl)
+        .then(res => res.text())
+        .then(csv => {
+          rawData = Papa.parse(csv, { header: true }).data.filter(r => r.Inicio && r.Fin);
+          console.log("Datos:", rawData);
+
+          let filtroID = document.getElementById("filtroID");
+          let filtroAct = document.getElementById("filtroAct");
+
+          // Llenar inicialmente ambos combos
+          llenarSelect(filtroID, [...new Set(rawData.map(r => r.ID_BD))], "todos");
+          llenarSelect(filtroAct, [...new Set(rawData.map(r => r.Actividad))], "todos");
+
+          drawGantt(rawData);
+
+          // Eventos para sincronizar y filtrar
+          filtroID.addEventListener("change", () => {
+            actualizarActividades(filtroID.value);
+            aplicarFiltros();
+          });
+
+          filtroAct.addEventListener("change", () => {
+            actualizarIDs(filtroAct.value);
+            aplicarFiltros();
+          });
+        });
+    }
+
+    // Llenar un <select> con opciones
+    function llenarSelect(select, valores, opcionTodos) {
+      select.innerHTML = ""; // limpiar
+      let opt = document.createElement("option");
+      opt.value = opcionTodos;
+      opt.textContent = opcionTodos === "todos" ? "Todos" : "Todas";
+      select.appendChild(opt);
+
+      valores.forEach(v => {
+        let option = document.createElement("option");
+        option.value = v;
+        option.textContent = v;
+        select.appendChild(option);
+      });
+    }
+
+    // Actualizar actividades según el ID seleccionado
+    function actualizarActividades(idSeleccionado) {
+      let filtroAct = document.getElementById("filtroAct");
+      if (idSeleccionado === "todos") {
+        llenarSelect(filtroAct, [...new Set(rawData.map(r => r.Actividad))], "todos");
+      } else {
+        let acts = rawData.filter(r => r.ID_BD === idSeleccionado).map(r => r.Actividad);
+        llenarSelect(filtroAct, [...new Set(acts)], "todos");
+      }
+    }
+
+    // Actualizar IDs según la Actividad seleccionada
+    function actualizarIDs(actSeleccionada) {
+      let filtroID = document.getElementById("filtroID");
+      if (actSeleccionada === "todos") {
+        llenarSelect(filtroID, [...new Set(rawData.map(r => r.ID_BD))], "todos");
+      } else {
+        let ids = rawData.filter(r => r.Actividad === actSeleccionada).map(r => r.ID_BD);
+        llenarSelect(filtroID, [...new Set(ids)], "todos");
+      }
+    }
+
+    function aplicarFiltros() {
+      let filtroID = document.getElementById("filtroID").value;
+      let filtroAct = document.getElementById("filtroAct").value;
+
+      let filtrado = rawData.filter(r => {
+        let matchID = (filtroID === "todos" || r.ID_BD === filtroID);
+        let matchAct = (filtroAct === "todos" || r.Actividad === filtroAct);
+        return matchID && matchAct;
+      });
+
+      drawGantt(filtrado);
+    }
+
+
+    function drawGantt(data) {
+      let dataTable = new google.visualization.DataTable();
+      dataTable.addColumn('string', 'Task ID');
+      dataTable.addColumn('string', 'Task Name');
+      dataTable.addColumn('date', 'Start Date');
+      dataTable.addColumn('date', 'End Date');
+      dataTable.addColumn('number', 'Duration');
+      dataTable.addColumn('number', 'Percent Complete');
+      dataTable.addColumn('string', 'Dependencies');
+
+      data.forEach((row, index) => {
+        let startParts = row.Inicio.split("-");
+        let endParts = row.Fin.split("-");
+
+        let startDate = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+        let endDate = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+
+        dataTable.addRow([
+          row.ID_BD + "_" +  index,
+          row.Actividad,
+          startDate,
+          endDate,
+          null,
+          row.Progreso ? parseInt(row.Progreso) : 0,
+          null
+        ]);
+      });
+
+      var options = {
+        height: rawData.length * 50,
+        gantt: {
+          trackHeight: 30,
+          taskStyle: {
+            fill: '#4CAF50',       // Color de las barras (verde)
+            fillOpacity: 0.9,
+            stroke: '#2E7D32',     // Borde de la barra
+            strokeWidth: 2
+          }
+        }
+      };
+      
+      let chart = new google.visualization.Gantt(document.getElementById('gantt_chart'));
+      google.visualization.events.addListener(chart, 'select', function() {
+      let selection = chart.getSelection();
+      if (selection.length > 0) {
+        let rowIndex = selection[0].row;
+        let taskId = dataTable.getValue(rowIndex, 0); // Task ID con índice
+        let idOriginal = taskId.split("_")[0];        // Extraer solo el ID_BD
+
+        let filtroID = document.getElementById("filtroID");
+
+        // Marcar este ID en el select
+        for (let opt of filtroID.options) {
+          opt.selected = (opt.value === idOriginal);
+        }
+
+        aplicarFiltros(); // Redibujar con el filtro aplicado
+      }
+    });
+      chart.draw(dataTable, options);
+    }
+  </script>
+</body>
+</html>
