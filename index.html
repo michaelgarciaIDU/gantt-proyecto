@@ -1,176 +1,302 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>Gantt con Google Charts</title>
-  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+<style>
+  html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+  :root { --track: #f4f5f7; --grid: #e6e8eb; --bar: #5b8def; --barDone:#7bd389; --text:#222; --today:#ff5a5f; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #fff; color: var(--text);}
+  .wrap { flex: 0 0 auto;   /* alto automático según filtros */
+  padding: 10px;
+  background: #fafbfc;
+  border-bottom: 1px solid #ccc;
+  z-index: 10; }
+  h1 { font-size: 20px; margin: 16px 0; }
+  .gantt { border: 1px solid #ddd; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.04);}
+  .header { display: grid; grid-template-columns: 240px 1fr; background: #fafbfc; border-bottom:1px solid #eee; }
+  .header .left, .body .left { padding: 10px 12px; background: #fff; border-right:1px solid #eee;}
+  .header .right { padding: 8px 0; }
+  .scale { position: relative; height: 40px; }
+  .scale .tick { position:absolute; top:0; bottom:0; width:1px; background: var(--grid);}
+  .scale .label { position:absolute; top: 4px; font-size: 12px; color:#555; transform: translateX(-50%); white-space: nowrap;}
+  .body { display: grid; grid-template-columns: 240px 1fr; }
+  .rows { position: relative; }
+  .row { display:grid; grid-template-columns: 240px 1fr; }
+  .row .left { display:flex; align-items:center; gap:8px; border-bottom:1px solid #f0f0f0; }
+  .row .right { position: relative; height: 40px; background: var(--track); border-bottom:1px solid #f0f0f0; }
+  svg { display:block; width:100%; height:100%; }
+  .grid-line { stroke: var(--grid); stroke-width:1; }
+  .today-line { stroke: var(--today); stroke-width:2; stroke-dasharray:3 4; }
+  .bar { cursor: pointer; }
+  .bar rect { rx: 6; ry: 6; }
+  .badge { font-size:11px; padding:2px 6px; border-radius:999px; background:#eef2ff; color:#3b5bcc; }
+  .tooltip { position: fixed; pointer-events: none; background:#111; color:#fff; padding:8px 10px; font-size:12px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.25); opacity:0; transition:opacity .08s ease; z-index: 10;}
+  #gantt-container { flex: 1 1 auto;   /* ocupa todo lo demás */
+  overflow-x: auto;
+  overflow-y: auto; }
+  #scale { position: sticky; top: 0; background: #fff; z-index: 2; border-bottom: 1px solid #ddd; }
+  #body .left { position: sticky; left: 0; background: #fff; z-index: 1; border-right: 1px solid #ddd; }
+</style>
 </head>
 <body>
-  <!-- Menús desplegables -->
+<div class="wrap">
   <label for="filtroID">Filtrar por ID:</label>
-  <select id="filtroID">
-    <option value="todos">Todos</option>
-  </select>
+  <select id="filtroID"><option value="todos">Todos</option></select>
 
   <label for="filtroAct">Filtrar por Actividad:</label>
-  <select id="filtroAct">
-    <option value="todos">Todas</option>
+  <select id="filtroAct"><option value="todas">Todas</option></select>
+
+  <label for="scaleMode">Escala:</label>
+  <select id="scaleMode">
+    <option value="days" selected>Días</option>
+    <option value="weeks">Semanas</option>
+    <option value="months">Meses</option>
+    <option value="years" selected>Años</option>
   </select>
 
+  <div id="gantt-container">
+    <div class="gantt" id="gantt">
+        <div class="header">
+          <div class="left"><strong>Tarea</strong></div>
+          <div class="right"><div class="scale" id="scale"></div></div>
+        </div>
+        <div class="body" id="body"></div>
+    </div>
+  </div>
+</div>
 
-  <div id="gantt_chart" style="width:100%; height:auto;"></div>
+<div class="tooltip" id="tooltip"></div>
 
-  <script>
-    const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQf6O3C2jZt2WBoN5YvxkieCRynEGMug_E3ubC6slbV8L_tUmNCFkz3XA65AGR9L55txSxPh2UMhaAh/pub?gid=0&single=true&output=csv";
+<script>
+(() => {
+  const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQf6O3C2jZt2WBoN5YvxkieCRynEGMug_E3ubC6slbV8L_tUmNCFkz3XA65AGR9L55txSxPh2UMhaAh/pub?gid=0&single=true&output=csv";
+  let rawData = [];
 
-    let rawData = [];
-
-    google.charts.load('current', {'packages':['gantt'],language: 'es'});
-    google.charts.setOnLoadCallback(loadData);
-
-    function loadData() {
-      fetch(sheetUrl)
-        .then(res => res.text())
-        .then(csv => {
-          rawData = Papa.parse(csv, { header: true }).data.filter(r => r.Inicio && r.Fin);
-          console.log("Datos:", rawData);
-
-          let filtroID = document.getElementById("filtroID");
-          let filtroAct = document.getElementById("filtroAct");
-
-          // Llenar inicialmente ambos combos
-          llenarSelect(filtroID, [...new Set(rawData.map(r => r.ID_BD))], "todos");
-          llenarSelect(filtroAct, [...new Set(rawData.map(r => r.Actividad))], "todos");
-
-          drawGantt(rawData);
-
-          // Eventos para sincronizar y filtrar
-          filtroID.addEventListener("change", () => {
-            actualizarActividades(filtroID.value);
-            aplicarFiltros();
-          });
-
-          filtroAct.addEventListener("change", () => {
-            actualizarIDs(filtroAct.value);
-            aplicarFiltros();
-          });
-        });
-    }
-
-    // Llenar un <select> con opciones
-    function llenarSelect(select, valores, opcionTodos) {
-      select.innerHTML = ""; // limpiar
-      let opt = document.createElement("option");
-      opt.value = opcionTodos;
-      opt.textContent = opcionTodos === "todos" ? "Todos" : "Todas";
-      select.appendChild(opt);
-
-      valores.forEach(v => {
-        let option = document.createElement("option");
-        option.value = v;
-        option.textContent = v;
-        select.appendChild(option);
-      });
-    }
-
-    // Actualizar actividades según el ID seleccionado
-    function actualizarActividades(idSeleccionado) {
-      let filtroAct = document.getElementById("filtroAct");
-      if (idSeleccionado === "todos") {
-        llenarSelect(filtroAct, [...new Set(rawData.map(r => r.Actividad))], "todos");
-      } else {
-        let acts = rawData.filter(r => r.ID_BD === idSeleccionado).map(r => r.Actividad);
-        llenarSelect(filtroAct, [...new Set(acts)], "todos");
-      }
-    }
-
-    // Actualizar IDs según la Actividad seleccionada
-    function actualizarIDs(actSeleccionada) {
-      let filtroID = document.getElementById("filtroID");
-      if (actSeleccionada === "todos") {
-        llenarSelect(filtroID, [...new Set(rawData.map(r => r.ID_BD))], "todos");
-      } else {
-        let ids = rawData.filter(r => r.Actividad === actSeleccionada).map(r => r.ID_BD);
-        llenarSelect(filtroID, [...new Set(ids)], "todos");
-      }
-    }
-
-    function aplicarFiltros() {
-      let filtroID = document.getElementById("filtroID").value;
-      let filtroAct = document.getElementById("filtroAct").value;
-
-      let filtrado = rawData.filter(r => {
-        let matchID = (filtroID === "todos" || r.ID_BD === filtroID);
-        let matchAct = (filtroAct === "todos" || r.Actividad === filtroAct);
-        return matchID && matchAct;
-      });
-
-      drawGantt(filtrado);
-    }
-
-
-    function drawGantt(data) {
-      let dataTable = new google.visualization.DataTable();
-      dataTable.addColumn('string', 'Task ID');
-      dataTable.addColumn('string', 'Task Name');
-      dataTable.addColumn('date', 'Start Date');
-      dataTable.addColumn('date', 'End Date');
-      dataTable.addColumn('number', 'Duration');
-      dataTable.addColumn('number', 'Percent Complete');
-      dataTable.addColumn('string', 'Dependencies');
-
-      data.forEach((row, index) => {
-        let startParts = row.Inicio.split("-");
-        let endParts = row.Fin.split("-");
-
-        let startDate = new Date(startParts[0], startParts[1] - 1, startParts[2]);
-        let endDate = new Date(endParts[0], endParts[1] - 1, endParts[2]);
-
-        dataTable.addRow([
-          row.ID_BD + "_" +  index,
-          row.Actividad,
-          startDate,
-          endDate,
-          null,
-          row.Progreso ? parseInt(row.Progreso) : 0,
-          null
-        ]);
-      });
-
-      var options = {
-        height: rawData.length * 50,
-        gantt: {
-          trackHeight: 30,
-          taskStyle: {
-            fill: '#4CAF50',       // Color de las barras (verde)
-            fillOpacity: 0.9,
-            stroke: '#2E7D32',     // Borde de la barra
-            strokeWidth: 2
-          }
-        }
-      };
-      
-      let chart = new google.visualization.Gantt(document.getElementById('gantt_chart'));
-      google.visualization.events.addListener(chart, 'select', function() {
-      let selection = chart.getSelection();
-      if (selection.length > 0) {
-        let rowIndex = selection[0].row;
-        let taskId = dataTable.getValue(rowIndex, 0); // Task ID con índice
-        let idOriginal = taskId.split("_")[0];        // Extraer solo el ID_BD
-
-        let filtroID = document.getElementById("filtroID");
-
-        // Marcar este ID en el select
-        for (let opt of filtroID.options) {
-          opt.selected = (opt.value === idOriginal);
-        }
-
-        aplicarFiltros(); // Redibujar con el filtro aplicado
-      }
+  fetch(sheetUrl)
+    .then(res => res.text())
+    .then(csv => {
+      rawData = Papa.parse(csv, { header: true }).data.filter(r => r.Inicio && r.Fin);
+      llenarSelect(document.getElementById("filtroID"), [...new Set(rawData.map(r => r.ID_BD))], "todos");
+      llenarSelect(document.getElementById("filtroAct"), [...new Set(rawData.map(r => r.Actividad))], "todas");
+      aplicarFiltros();
     });
-      chart.draw(dataTable, options);
+
+  function llenarSelect(select, valores, opcionTodos) {
+    select.innerHTML = ""; 
+    let opt = document.createElement("option");
+    opt.value = opcionTodos;
+    opt.textContent = opcionTodos === "todos" ? "Todos" : "Todas";
+    select.appendChild(opt);
+    valores.forEach(v => {
+      if (!v) return;
+      let option = document.createElement("option");
+      option.value = v;
+      option.textContent = v;
+      select.appendChild(option);
+    });
+    select.addEventListener("change", aplicarFiltros);
+  }
+
+  function aplicarFiltros() {
+    const idSel = document.getElementById("filtroID").value;
+    const actSel = document.getElementById("filtroAct").value;
+    const filtrados = rawData.filter(r => {
+      const idOk = (idSel === "todos") || (r.ID_BD === idSel);
+      const actOk = (actSel === "todas") || (r.Actividad === actSel);
+      return idOk && actOk;
+    });
+    const tasks = filtrados.map(r => ({
+      name: r.ID_BD + "-" + r.Actividad,
+      start: r.Inicio,
+      end: r.Fin,
+      progress: r.Progreso ? parseInt(r.Progreso, 10) : 0
+    }));
+    dibujarGantt(tasks);
+  }
+
+  function dibujarGantt(tasks) {
+    const rowHeight = 40;
+    const topPadding = 4;
+    const barHeight = 20;
+    const scaleMode = document.getElementById("scaleMode").value;
+
+    let dayWidth;
+    if (scaleMode === "days") dayWidth = 26;
+    else if (scaleMode === "weeks") dayWidth = 50;
+    else if (scaleMode === "months") dayWidth = 80;
+    else if (scaleMode === "years") dayWidth = 120;
+
+    const toDate = s => new Date(s + "T00:00:00");
+    const fmt = d => d.toISOString().slice(0, 10);
+    const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+    if (tasks.length === 0) {
+      document.getElementById("scale").innerHTML = "";
+      document.getElementById("body").innerHTML = "<p style='padding:10px'>No hay datos con estos filtros.</p>";
+      return;
     }
-  </script>
+
+    const minDate = tasks.reduce((m,t)=> toDate(t.start) < m ? toDate(t.start) : m, toDate(tasks[0].start));
+    const maxDate = tasks.reduce((m,t)=> toDate(t.end)   > m ? toDate(t.end)   : m, toDate(tasks[0].end));
+    const startDate = addDays(minDate, -1);
+    const endDate   = addDays(maxDate,  1);
+    const totalDays = Math.ceil((endDate - startDate) / (1000*60*60*24));
+    const xForDate = d => Math.round(((toDate(d) - startDate) / (1000*60*60*24)) * (dayWidth / (scaleMode==="days"?1: scaleMode==="weeks"?7: scaleMode==="months"?30:365)));
+
+    // Escala
+    const scaleEl = document.getElementById("scale");
+    scaleEl.innerHTML = "";
+
+    if (scaleMode === "days") {
+      for (let i = 0; i <= totalDays; i++) {
+        const x = i * dayWidth;
+        const current = addDays(startDate, i);
+        const tick = document.createElement("div");
+        tick.className = "tick"; tick.style.left = x + "px"; scaleEl.appendChild(tick);
+        const lab = document.createElement("div");
+        lab.className = "label"; lab.style.left = x + "px"; lab.textContent = current.getDate();
+        scaleEl.appendChild(lab);
+      }
+    } else if (scaleMode === "weeks") {
+      let week = 1;
+      for (let i = 0; i <= totalDays; i += 7) {
+        const x = (i/7) * dayWidth;
+        const tick = document.createElement("div");
+        tick.className = "tick"; tick.style.left = x + "px"; scaleEl.appendChild(tick);
+        const lab = document.createElement("div");
+        lab.className = "label"; lab.style.left = x + "px"; lab.textContent = "Sem " + week++;
+        scaleEl.appendChild(lab);
+      }
+    } else if (scaleMode === "months") {
+      let current = new Date(startDate);
+      while (current <= endDate) {
+        const diff = (current - startDate) / (1000*60*60*24);
+        const x = (diff/30) * dayWidth;
+        const tick = document.createElement("div");
+        tick.className = "tick"; tick.style.left = x + "px"; scaleEl.appendChild(tick);
+        const lab = document.createElement("div");
+        lab.className = "label"; lab.style.left = x + "px";
+        lab.textContent = current.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+        scaleEl.appendChild(lab);
+        current = new Date(current.getFullYear(), current.getMonth()+1, 1);
+      }
+    } else if (scaleMode === "years") {
+      let current = new Date(startDate.getFullYear(), 0, 1);
+      while (current <= endDate) {
+        const diff = (current - startDate) / (1000*60*60*24);
+        const x = (diff/365) * dayWidth;
+        const tick = document.createElement("div");
+        tick.className = "tick"; tick.style.left = x + "px"; scaleEl.appendChild(tick);
+        const lab = document.createElement("div");
+        lab.className = "label"; lab.style.left = x + "px"; lab.textContent = current.getFullYear();
+        scaleEl.appendChild(lab);
+        current = new Date(current.getFullYear()+1, 0, 1);
+      }
+    }
+
+    // Cuerpo
+    const body = document.getElementById("body");
+    body.innerHTML = "";
+    const leftCol = document.createElement("div");
+    leftCol.className = "left";
+    const rightCol = document.createElement("div");
+    rightCol.className = "rows";
+
+    tasks.forEach(t => {
+      const cell = document.createElement("div");
+      cell.className = "left";
+      const name = document.createElement("div"); name.textContent = t.name;
+      const badge = document.createElement("span"); badge.className = "badge"; badge.textContent = `${t.progress}%`;
+      cell.appendChild(name); cell.appendChild(badge);
+      leftCol.appendChild(cell);
+    });
+
+    const svgWidth = (scaleMode==="days"? totalDays : scaleMode==="weeks"? totalDays/7 : scaleMode==="months"? totalDays/30 : totalDays/365) * dayWidth;
+    const svgHeight = tasks.length * rowHeight;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", svgWidth);
+    svg.setAttribute("height", svgHeight);
+
+    for (let i = 0; i <= totalDays; i++) {
+      const x = (scaleMode==="days"? i : scaleMode==="weeks"? i/7 : scaleMode==="months"? i/30 : i/365) * dayWidth + 0.5;
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", x); line.setAttribute("y1", 0);
+      line.setAttribute("x2", x); line.setAttribute("y2", svgHeight);
+      line.setAttribute("class", "grid-line");
+      svg.appendChild(line);
+    }
+
+    const today = new Date();
+    const todayStr = fmt(today);
+    if (today >= startDate && today <= endDate) {
+      const xToday = xForDate(todayStr) + 0.5;
+      const tLine = document.createElementNS(svgNS, "line");
+      tLine.setAttribute("x1", xToday); tLine.setAttribute("y1", 0);
+      tLine.setAttribute("x2", xToday); tLine.setAttribute("y2", svgHeight);
+      tLine.setAttribute("class", "today-line");
+      svg.appendChild(tLine);
+    }
+
+    const tt = document.getElementById("tooltip");
+    const showTip = (evt, html) => {
+      tt.innerHTML = html;
+      tt.style.opacity = "1";
+      const pad = 12;
+      tt.style.left = (evt.clientX + pad) + "px";
+      tt.style.top  = (evt.clientY + pad) + "px";
+    };
+    const hideTip = () => tt.style.opacity = "0";
+
+    tasks.forEach((t, idx) => {
+      const y = idx * rowHeight + topPadding + (rowHeight - barHeight)/2;
+      const g = document.createElementNS(svgNS, "g");
+      g.setAttribute("class", "bar");
+      const x = xForDate(t.start);
+      const w = Math.max((xForDate(t.end) - xForDate(t.start) + (dayWidth/(scaleMode==="days"?1: scaleMode==="weeks"?7: scaleMode==="months"?30:365))), dayWidth*0.6);
+      const rect = document.createElementNS(svgNS, "rect");
+      rect.setAttribute("x", x); rect.setAttribute("y", y);
+      rect.setAttribute("width", w); rect.setAttribute("height", barHeight);
+      rect.setAttribute("fill", "var(--bar)");
+      const wProg = Math.max(0, Math.min(w, w * (t.progress/100)));
+      const rectProg = document.createElementNS(svgNS, "rect");
+      rectProg.setAttribute("x", x); rectProg.setAttribute("y", y);
+      rectProg.setAttribute("width", wProg); rectProg.setAttribute("height", barHeight);
+      rectProg.setAttribute("fill", "var(--barDone)");
+      g.appendChild(rect); g.appendChild(rectProg);
+      g.addEventListener("mousemove", (e) => {
+        const html = `<strong>${t.name}</strong><br>${fmt(toDate(t.start))} → ${fmt(toDate(t.end))}<br>Progreso: ${t.progress}%`;
+        showTip(e, html);
+      });
+      g.addEventListener("mouseleave", hideTip);
+      svg.appendChild(g);
+    });
+
+    const right = document.createElement("div");
+    right.className = "right";
+    right.style.height = svgHeight + "px";
+    right.appendChild(svg);
+    body.appendChild(leftCol);
+    body.appendChild(right);
+    leftCol.style.height = svgHeight + "px";
+    [...leftCol.children].forEach(el => {
+    el.style.height = rowHeight + "px";
+    el.style.display = "flex";
+    el.style.alignItems = "center";
+    });
+  }
+
+  document.getElementById("scaleMode").addEventListener("change", aplicarFiltros);
+})();
+</script>
 </body>
 </html>
