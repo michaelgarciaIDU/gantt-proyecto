@@ -23,6 +23,122 @@
     background: #fff; 
     color: var(--text);
   }
+  select {
+  appearance: none;        /* Ocultar flecha nativa */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  padding: 8px 32px 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff url("data:image/svg+xml;utf8,<svg fill='%23333' height='20' viewBox='0 0 24 24' width='20' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>") no-repeat right 10px center;
+  background-size: 16px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 160px;
+  margin: 4px 8px;
+}
+
+select:hover {
+  border-color: #5b8def;
+  box-shadow: 0 0 6px rgba(91,141,239,.4);
+}
+
+select:focus {
+  outline: none;
+  border-color: #5b8def;
+  box-shadow: 0 0 6px rgba(91,141,239,.6);
+}
+
+label {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 6px 0 12px;
+  color: #444;
+}
+
+  .tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: #b8b8b8;
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(228, 228, 228, 0.35);
+  opacity: 0;
+  transition: opacity .15s ease, transform .15s ease;
+  transform: translateY(-4px);
+  z-index: 1000;
+  max-width: 500px;
+  line-height: 1.4;
+}
+
+.tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tooltip strong {
+  font-size: 14px;
+  color: #2c2c2c; /* Verde suave para títulos */
+}
+
+.date {
+  font-size: 15px;
+  color: #2c2c2c;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: bold;
+
+}
+.tooltip .progress {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-block;
+}
+.legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 8px;
+  margin-left: 12px;
+  font-size: 13px;
+  color: #444;
+  flex-wrap: wrap;
+}
+
+.color-box {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.color-box.bar {
+  background: var(--bar);
+}
+
+.color-box.barDone {
+  background: var(--barDone);
+}
+
+.color-box.today {
+  background: var(--today);
+}
+
+
+.progress.low    { background: #ffdddd; color: #d00000; } 
+.progress.medium { background: #fff4cc; color: #b8860b; } 
+.progress.high   { background: #ddffdd; color: #006400; } 
+
   .wrap { flex: 0 0 auto; padding: 10px; background: #fafbfc; border-bottom: 1px solid #ccc; z-index: 10; }
   .gantt { border: 1px solid #ddd; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.04); position: relative;}
   .header { display: grid; grid-template-columns: 240px 1fr; background: #fff; border-bottom:1px solid #eee; position: sticky; top: 0; z-index: 3; }
@@ -37,7 +153,7 @@
   svg { display:block; width:100%; height:100%; }
   .bar rect { rx: 6; ry: 6; }
   .badge { font-size:11px; padding:2px 6px; border-radius:999px; background:#eef2ff; color:#3b5bcc; }
-  .tooltip { position: fixed; pointer-events: none; background:#111; color:#fff; padding:8px 10px; font-size:12px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.25); opacity:0; transition:opacity .08s ease; z-index: 10;}
+  .tooltip { position: fixed; pointer-events: none; background: #e6e6e6; color:#fff; padding:8px 10px; font-size:12px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.25); opacity:0; transition:opacity .08s ease; z-index: 10;}
   #gantt-container { flex: 1 1 auto; overflow-x: auto; overflow-y: auto;}
   #body .left { position: sticky; left: 0; background: #fff; z-index: 2; border-right: 1px solid #ddd; }
   .today-line {
@@ -67,6 +183,15 @@
   <select  id="yearStart"></select>
   <label for="yearEnd">Hasta:</label>
   <select id="yearEnd"></select>
+  <label for="Proyecto">Proyecto:</label>
+  <select id="Proyecto"></select>
+  <div class="legend">
+    <span><span class="color-box bar"></span> Tarea</span>
+    <span><span class="color-box barDone"></span> Progreso</span>
+    <span><span class="color-box today"></span> Linea Hoy</span>
+  </div>
+  <br>
+
   <div id="gantt-container">
     <div class="gantt" id="gantt">
       <div class="header">
@@ -85,11 +210,11 @@
   const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQEI_N__u5SB7mPNeRLDGTcDZby4bs7TX0egicNqjaxwfTLdbtAkq4ESR358oHkAkS0OUtiEwFNbQdJ/pub?gid=665489139&single=true&output=csv";
   let rawData = [];
   let globalMinDate, globalMaxDate;
-
   fetch(sheetUrl)
     .then(res => res.text())
     .then(csv => {
       rawData = Papa.parse(csv, { header: true }).data.filter(r => r.Inicio && r.Fin);
+      console.log(rawData);
       document.getElementById("yearStart").value = 2025;
       // rango global
       globalMinDate = rawData.reduce((m,r)=> new Date(r.Inicio) < m ? new Date(r.Inicio) : m, new Date(rawData[0].Inicio));
@@ -97,6 +222,7 @@
 
       llenarSelect(document.getElementById("filtroID"), [...new Set(rawData.map(r => r.ID_BD))], "todos");
       llenarSelect(document.getElementById("filtroAct"), [...new Set(rawData.map(r => r.Actividad))], "todas");
+      llenarSelect(document.getElementById("Proyecto"), [...new Set(rawData.map(r => r.Proyecto))], "todos");
       aplicarFiltros();
       
       llenarAnios();
@@ -152,13 +278,17 @@
   function aplicarFiltros() {
     const idSel = document.getElementById("filtroID").value;
     const actSel = document.getElementById("filtroAct").value;
+    const proySel = document.getElementById("Proyecto").value;
     const filtrados = rawData.filter(r => {
       const idOk = (idSel === "todos") || (r.ID_BD === idSel);
       const actOk = (actSel === "todas") || (r.Actividad === actSel);
-      return idOk && actOk;
+      const proyecOk = (proySel === "todos") || (r.Proyecto === proySel);
+      return idOk && actOk && proyecOk;
+      return idOk && actOk && proyecOk;
     });
     const tasks = filtrados.map(r => ({
       name: r.ID_BD + "-" + r.Actividad,
+      PROYECTO: r.Proyecto,
       start: r.Inicio,
       end: r.Fin,
       progress: r.Progreso ? parseInt(r.Progreso, 10) : 0
@@ -228,6 +358,7 @@
 
       const left = document.createElement("div");
       left.className = "left";
+      console.log(t);
       const name = document.createElement("div"); name.textContent = t.name;
       const badge = document.createElement("span"); badge.className = "badge"; badge.textContent = `${t.progress}%`;
       left.appendChild(name); left.appendChild(badge);
@@ -260,9 +391,25 @@
       svg.appendChild(rectProg);
 
       svg.addEventListener("mousemove", e => {
-        showTip(e, `<strong>${t.name}</strong><br>${fmt(toDate(t.start))} → ${fmt(toDate(t.end))}<br>Progreso: ${t.progress}%`);
+        let progClass = "low";
+        if (t.progress >= 80) progClass = "high";
+        else if (t.progress >= 50) progClass = "medium";
+
+        showTip(e, `
+          <div>
+            <strong>Proyecto: ${t.PROYECTO}</strong><br><br>
+            <span class="date">Desde: ${fmt(toDate(t.start))}</span><br><br>
+            <span class="date">Hasta: ${fmt(toDate(t.end))}</span><br>
+            <span class="progress ${progClass}">Progreso: ${t.progress}%</span>
+          </div>
+        `);
+        tt.classList.add("visible");
       });
-      svg.addEventListener("mouseleave", hideTip);
+      svg.addEventListener("mouseleave", () => {
+        hideTip();
+        tt.classList.remove("visible");
+      });
+
 
       right.appendChild(svg);
 
